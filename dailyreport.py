@@ -8,13 +8,7 @@ import pptx as myPythonPptx
 from pptx import Presentation
 
 # Google sheet API & Credential
-import google.auth
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient import discovery
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
+import gspread
 
 pathToRawExcelFileTemplate = "E:\\Downloads\\Defect Improvement Status - IP34" # Defect Improvement Status - IP34 - 220428.xlsx
 pathToRawPptFile = "E:\\Downloads\\Defect Improvement Status - IP34.pptx"
@@ -22,12 +16,13 @@ pathToOutputFile = f"DailyIssue.xlsx"
 componentToFind = ["Vehicle"]
 # "[Vehicle]Daily defect report"
 
-
+TEAM = "Team"
 PIC = "P.I.C"
 TICKET_DESC = "Ticket desc."
 ISSUE_CATE = "Issue Category"
 JIRA_NUM = "JIRA Num."
 m_TicketsDict = dict()
+m_TicketsDict[TEAM] =            []
 m_TicketsDict[PIC] =            []
 m_TicketsDict[TICKET_DESC] =        []
 m_TicketsDict[ISSUE_CATE] =        []
@@ -36,67 +31,71 @@ m_TicketsDict[JIRA_NUM] =           []
 # Google Spreadsheet Config
 # If modifying these scopes, delete the file token.json.
 
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+# SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 # SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 # The ID and range of a sample spreadsheet.
-SAMPLE_SPREADSHEET_ID = '1fVlAgdk6OARRty9LOnZVb2BSMCAjy1j9x_BHg3sbhVs'
-SAMPLE_RANGE_NAME = '6-May!A2:E'
+SPREADSHEET_ID = '[Vehicle]Daily defect report'
 
 def exportToGoogleSheet():
+    sa = gspread.service_account()
+    sheet = sa.open(SPREADSHEET_ID)
+
+    currentDay = datetime.datetime.today()
+    monthName = datetime.datetime.strptime(str(currentDay.month), "%m")
+    shortMonthName = monthName.strftime("%b")
+    workSheetName = str(currentDay.day) + '-' + shortMonthName;
+    # sheet.del_worksheet(workSheetName)
+    sheet.add_worksheet(workSheetName, 100, 25)
+    
+    toDayWorkSheet = sheet.worksheet(workSheetName)
     print("Start push data to Google Sheet")
-    creds = None
-    # The file token.json stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first
-    # time.
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-    # If there are no (valid) credentials available, let the user log in.
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
-        # Save the credentials for the next run
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
 
-    try:
-        service = discovery.build('sheets', 'v4', credentials=creds)
+    dataframe = myPandas.DataFrame(m_TicketsDict)
+    toDayWorkSheet.update([dataframe.columns.values.tolist()] + dataframe.values.tolist())
+    #wks.update('D2:E3', [['Engineering', 'Tennis'], ['Business', 'Pottery']])
+    toDayWorkSheet.update('F1', 'Root Cause')
+    toDayWorkSheet.update('F1:K1', [['Root Cause', 'Original Target', 'Changed Target', 'Reason for changing target', 'Blocker', 'CR Related']])
 
-        # Call the Sheets API
-        sheet = service.spreadsheets()
-        result = sheet.values().get(spreadsheetId=SAMPLE_SPREADSHEET_ID,
-                                    range=SAMPLE_RANGE_NAME).execute()
-        values = result.get('values', [])
+    # Formarting google sheet:
+    toDayWorkSheet.format('A1:K1', {'textFormat': {'bold': True}})
+    numberOfRows = len(m_TicketsDict[JIRA_NUM]) + 1
+    # GREEN:   RGB(0.58 0.77 0.5)
+    # ORANGNE: RGB(1.0 0.85 0.4)
 
-        if not values:
-            print('No data found.')
-            return
+    colToBeColored = 'A1:C' + str(numberOfRows)
+    toDayWorkSheet.format(colToBeColored, {
+        "backgroundColor": {
+        "red": 0.58, "green": 0.77, "blue": 0.5
+        },
+        "horizontalAlignment": "LEFT"
+    })
 
-        print('Name, Major:')
-        for row in values:
-            # Print columns A and E, which correspond to indices 0 and 4.
-            print('%s, %s' % (row[0], row[4]))
-        values = [
-            [
-                # Cell values ...
-            ],
-            # Additional rows ...
-        ]
+    colToBeColored = 'D1:D' + str(numberOfRows)
+    toDayWorkSheet.format(colToBeColored, {
+        "backgroundColor": {
+        "red": 1.0, "green": 0.85, "blue": 0.4
+        },
+        "horizontalAlignment": "CENTER"
+    })
 
-        body = {
-            'values': values
-        }
-        result = sheet.values().update(
-            spreadsheetId=SAMPLE_SPREADSHEET_ID, range=SAMPLE_RANGE_NAME,
-            valueInputOption='RAW', body=body).execute()
+    colToBeColored = 'E1:E' + str(numberOfRows)
+    toDayWorkSheet.format(colToBeColored, {
+        "backgroundColor": {
+        "red": 0.58, "green": 0.77, "blue": 0.5
+        },
+        "horizontalAlignment": "CENTER"
+    })
 
-        print('{0} cells updated.'.format(result.get('updatedCells')))
-    except HttpError as err:
-        print(err)
+    colToBeColored = 'F1:K' + str(numberOfRows)
+    toDayWorkSheet.format(colToBeColored, {
+        "backgroundColor": {
+        "red": 1.0, "green": 0.85, "blue": 0.4
+        },
+        "horizontalAlignment": "CENTER"
+    })
+
 # Make 1 become "01"
+
 def insertZeroToNumber(inp):
     if (inp < 10):
         return "0" + str(inp)
@@ -122,6 +121,7 @@ def getTicketFromRawDataByDate(list_component_to_find, currentDay):
         currentLineDataFrame = sheetToday.iloc[i]
         for component in list_component_to_find:
             if component in currentLineDataFrame['Component/s']:
+                m_TicketsDict[TEAM].append('Must filled')
                 m_TicketsDict[PIC].append(currentLineDataFrame['Assignee'])
                 m_TicketsDict[TICKET_DESC].append(currentLineDataFrame['Summary'])
                 m_TicketsDict[ISSUE_CATE].append('Must filled')
@@ -145,18 +145,30 @@ def exportToExcel():
       print("\nError: ---> Please close output file " + pathToOutputFile)
     return
 
-
 def createPptFromTemplate():
     myPptx = Presentation(pathToRawPptFile)
     print(myPptx)
     return myPptx
 
+def printComment():
+    nTickets = len(m_TicketsDict[JIRA_NUM])
+    COMMENT_CALL_TO_FILL = f'Hi all, hôm nay có {nTickets} tickets, nhờ mọi người điền nhé: https://docs.google.com/spreadsheets/d/1fVlAgdk6OARRty9LOnZVb2BSMCAjy1j9x_BHg3sbhVs/edit?usp=sharing'
+    print(COMMENT_CALL_TO_FILL)
+
+    currentDay = datetime.datetime.today()
+    monthName = datetime.datetime.strptime(str(currentDay.month), "%m")
+    shortMonthName = monthName.strftime("%b")
+    fDay = str(currentDay.day) + ' ' + shortMonthName + '.'
+    COMMENT_SEND_EMAIL = f'Dear chị Vy, em gửi daily defect report ({fDay}) của Vehicle ạ.'
+    print(COMMENT_SEND_EMAIL)
+
 def main():
     getTicketFromRawDataByDate(componentToFind, datetime.datetime.today())
     # createPptFromTemplate()
     exportToExcel()
-    # exportToGoogleSheet()
+    exportToGoogleSheet()
     # testClient()
+    printComment()
     print("Completed.")
 
 if __name__ == "__main__":
